@@ -1,4 +1,4 @@
-import { ArrowDownUp, Plus, RefreshCw, RotateCcw, Search } from 'lucide-react';
+import { ArrowDownUp, Plus, RotateCcw, Search } from 'lucide-react';
 import type { SortKey } from '../types';
 
 interface Props {
@@ -8,8 +8,6 @@ interface Props {
   onSort: (s: SortKey) => void;
   onAddCoin: () => void;
   onResetAll: () => void;
-  onRefresh: () => void;
-  refreshing: boolean;
   resultCount: number;
   totalCount: number;
 }
@@ -27,8 +25,6 @@ export function Controls({
   onSort,
   onAddCoin,
   onResetAll,
-  onRefresh,
-  refreshing,
   resultCount,
   totalCount,
 }: Props) {
@@ -81,15 +77,6 @@ export function Controls({
             ))}
           </select>
         </div>
-
-        <button
-          onClick={onRefresh}
-          disabled={refreshing}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-base-700 bg-base-850 px-3 py-2.5 text-sm text-base-200 transition-colors hover:border-base-600 hover:text-base-100 disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
 
         <button
           onClick={onResetAll}

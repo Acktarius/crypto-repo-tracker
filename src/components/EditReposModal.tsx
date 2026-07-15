@@ -1,6 +1,7 @@
 import { AlertCircle, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DEFAULT_COINS } from '../data/defaults';
+import { parseRepoSlug } from '../lib/repo';
 import type { CoinConfig } from '../types';
 import { Modal } from './Modal';
 
@@ -34,17 +35,20 @@ export function EditReposModal({
   if (!coin) return null;
 
   const addRepo = () => {
-    const v = input.trim();
-    if (!v) return;
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(v)) {
-      setError('Use the owner/name format, e.g. bitcoin/bitcoin');
+    const slug = parseRepoSlug(input);
+    if (!slug) {
+      if (input.trim()) {
+        setError(
+          'Use owner/name or a GitHub URL, e.g. bitcoin/bitcoin or https://github.com/bitcoin/bitcoin',
+        );
+      }
       return;
     }
-    if (repos.some((r) => r.toLowerCase() === v.toLowerCase())) {
+    if (repos.some((r) => r.toLowerCase() === slug.toLowerCase())) {
       setError('That repo is already in the list.');
       return;
     }
-    setRepos((prev) => [...prev, v]);
+    setRepos((prev) => [...prev, slug]);
     setInput('');
     setError('');
   };
@@ -89,7 +93,7 @@ export function EditReposModal({
                   addRepo();
                 }
               }}
-              placeholder="owner/name"
+              placeholder="owner/name or github.com/…"
               className="flex-1 rounded-xl border border-base-700 bg-base-900 px-3 py-2 text-sm text-base-100 placeholder:text-base-500 focus:border-accent-500/60 focus:outline-none focus:ring-2 focus:ring-accent-500/20"
             />
             <button

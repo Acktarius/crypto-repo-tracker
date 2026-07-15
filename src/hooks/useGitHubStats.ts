@@ -1,27 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchRateLimit, fetchRepoStats } from '../lib/github';
 import type { CoinConfig, CoinStats, RateLimitInfo } from '../types';
 
 export interface UseGitHubStatsResult {
   stats: Record<string, CoinStats>;
   rateLimit: RateLimitInfo | null;
-  refreshing: boolean;
-  refresh: () => void;
-  refreshCoin: (id: string) => void;
+  loading: boolean;
   lastGlobalUpdate: number | null;
 }
 
 /**
- * Derive an overall coin state from its repo states.
- * Priority: rate-limited > error > not-found > empty > loading > ok
+ * Derive coin state from repo states.
+ * Prefer success when any repo ok — one flaky stats call shouldn't mark the coin Error.
  */
 function deriveState(repos: CoinStats['repos']): CoinStats['state'] {
   if (repos.length === 0) return 'empty';
   if (repos.some((r) => r.state === 'rate-limited')) return 'rate-limited';
-  if (repos.some((r) => r.state === 'error')) return 'error';
-  if (repos.every((r) => r.state === 'not-found')) return 'not-found';
-  if (repos.every((r) => r.state === 'empty')) return 'empty';
+  if (repos.some((r) => r.state === 'ok')) return 'ok';
   if (repos.some((r) => r.state === 'loading')) return 'loading';
+  if (repos.every((r) => r.state === 'empty')) return 'empty';
+  if (repos.every((r) => r.state === 'not-found')) return 'not-found';
+  if (repos.some((r) => r.state === 'error')) return 'error';
   return 'ok';
 }
 
@@ -42,119 +41,89 @@ function aggregate(
   };
 }
 
+function loadingStats(coin: CoinConfig): CoinStats {
+  return {
+    commits30d: 0,
+    commits180d: 0,
+    repoCount: coin.repos.length,
+    repos: coin.repos.map((r) => ({
+      repo: r,
+      commits30d: 0,
+      commits180d: 0,
+      state: 'loading',
+    })),
+    lastUpdated: null,
+    state: 'loading',
+  };
+}
+
+/**
+ * One fetch pass when the coin/repo set changes. No manual refresh loop.
+ */
 export function useGitHubStats(coins: CoinConfig[]): UseGitHubStatsResult {
   const [stats, setStats] = useState<Record<string, CoinStats>>({});
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [lastGlobalUpdate, setLastGlobalUpdate] = useState<number | null>(null);
+
+  // Stable key so we only re-fetch when ids/repos actually change.
+  const coinKey = useMemo(
+    () => coins.map((c) => `${c.id}:${c.repos.join(',')}`).join('|'),
+    [coins],
+  );
   const coinsRef = useRef(coins);
   coinsRef.current = coins;
-  const inflight = useRef<Set<string>>(new Set());
-  const seqRef = useRef(0);
 
-  const updateCoinStats = useCallback(
-    (id: string, repos: CoinStats['repos']) => {
-      const totals = aggregate(repos);
-      setStats((prev) => ({
-        ...prev,
-        [id]: {
-          ...totals,
-          repoCount: repos.length,
-          repos,
-          lastUpdated: Date.now(),
-          state: deriveState(repos),
-        },
-      }));
-    },
-    [],
-  );
-
-  const loadCoin = useCallback(
-    async (coin: CoinConfig, seq: number) => {
-      if (inflight.current.has(coin.id)) return;
-      inflight.current.add(coin.id);
-      // Set loading state immediately.
-      setStats((prev) => ({
-        ...prev,
-        [coin.id]: {
-          commits30d: 0,
-          commits180d: 0,
-          repoCount: coin.repos.length,
-          repos: coin.repos.map((r) => ({
-            repo: r,
-            commits30d: 0,
-            commits180d: 0,
-            state: 'loading',
-          })),
-          lastUpdated: prev[coin.id]?.lastUpdated ?? null,
-          state: 'loading',
-        },
-      }));
-
-      const repoResults = await Promise.all(
-        coin.repos.map((r) => fetchRepoStats(r)),
-      );
-
-      if (seq !== seqRef.current) {
-        inflight.current.delete(coin.id);
-        return;
-      }
-      updateCoinStats(coin.id, repoResults);
-      inflight.current.delete(coin.id);
-    },
-    [updateCoinStats],
-  );
-
-  const refreshAll = useCallback(async () => {
-    if (refreshing) return;
-    const seq = ++seqRef.current;
-    setRefreshing(true);
-    const rl = await fetchRateLimit().catch(() => null);
-    if (seq !== seqRef.current) {
-      setRefreshing(false);
-      return;
-    }
-    if (rl) setRateLimit(rl);
-    // If exhausted, still try per-repo — the per-repo responses will carry the
-    // rate-limit state so coins show a clear rate-limited banner.
-    await Promise.all(coinsRef.current.map((c) => loadCoin(c, seq)));
-    if (seq === seqRef.current) {
-      setLastGlobalUpdate(Date.now());
-      setRefreshing(false);
-    }
-  }, [refreshing, loadCoin]);
-
-  const refreshCoin = useCallback(
-    async (id: string) => {
-      const coin = coinsRef.current.find((c) => c.id === id);
-      if (!coin) return;
-      const seq = seqRef.current;
-      await loadCoin(coin, seq);
-    },
-    [loadCoin],
-  );
-
-  // Initial load + when the set of coins changes identity.
   useEffect(() => {
-    refreshAll();
-  }, [refreshAll]);
+    let cancelled = false;
+    const snapshot = coinsRef.current;
 
-  // Poll rate limit info every 60s while idle (cheap endpoint).
-  useEffect(() => {
-    const t = setInterval(async () => {
-      if (refreshing) return;
+    async function load() {
+      setLoading(true);
+      setStats(Object.fromEntries(snapshot.map((c) => [c.id, loadingStats(c)])));
+
       const rl = await fetchRateLimit().catch(() => null);
+      if (cancelled) return;
       if (rl) setRateLimit(rl);
-    }, 60000);
-    return () => clearInterval(t);
-  }, [refreshing]);
+
+      // Sequential: stay well inside the 60/hr unauthenticated REST budget.
+      for (const coin of snapshot) {
+        if (cancelled) return;
+        const repoResults: CoinStats['repos'] = [];
+        for (const repo of coin.repos) {
+          if (cancelled) return;
+          repoResults.push(await fetchRepoStats(repo));
+        }
+        if (cancelled) return;
+        const totals = aggregate(repoResults);
+        setStats((prev) => ({
+          ...prev,
+          [coin.id]: {
+            ...totals,
+            repoCount: repoResults.length,
+            repos: repoResults,
+            lastUpdated: Date.now(),
+            state: deriveState(repoResults),
+          },
+        }));
+      }
+
+      if (!cancelled) {
+        setLastGlobalUpdate(Date.now());
+        setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [coinKey]);
 
   return {
     stats,
     rateLimit,
-    refreshing,
-    refresh: refreshAll,
-    refreshCoin,
+    loading,
     lastGlobalUpdate,
   };
 }

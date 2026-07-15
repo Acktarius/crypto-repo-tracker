@@ -23,9 +23,6 @@ function App() {
   const {
     stats,
     rateLimit,
-    refreshing,
-    refresh,
-    refreshCoin,
     lastGlobalUpdate,
   } = useGitHubStats(orderedCoins);
 
@@ -122,8 +119,6 @@ function App() {
             onSort={setSort}
             onAddCoin={() => setAddOpen(true)}
             onResetAll={handleResetAll}
-            onRefresh={refresh}
-            refreshing={refreshing}
             resultCount={visibleCoins.length}
             totalCount={orderedCoins.length}
           />
@@ -142,26 +137,51 @@ function App() {
                 onEdit={(c) => setEditCoin(c)}
                 onRemove={removeCoin}
                 onResetRepos={resetRepos}
-                onRefresh={refreshCoin}
               />
             ))}
           </div>
         )}
 
         {/* Footer */}
-        <footer className="mt-10 flex flex-col items-center justify-between gap-2 border-t border-base-800 pt-6 text-xs text-base-500 sm:flex-row">
-          <span>
-            Commit counts via the GitHub Search API. Windows cap at 1,000
-            results per repo.
-          </span>
-          <a
-            href="https://docs.github.com/en/rest/search#search-commits"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 transition-colors hover:text-base-300"
-          >
-            <Github size={12} /> GitHub API docs
-          </a>
+        <footer className="mt-10 space-y-4 border-t border-base-800 pt-6 text-xs text-base-500">
+          <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
+            <span>
+              Commit counts from the GitHub commits API (includes merges).
+              Fetched once on load — no token needed for casual use (~60
+              requests/hour without one; add a token if you reload often).
+            </span>
+            <a
+              href="https://docs.github.com/en/rest/commits/commits#list-commits"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 transition-colors hover:text-base-300"
+            >
+              <Github size={12} /> GitHub API docs
+            </a>
+          </div>
+          <div className="flex flex-col items-center gap-2 text-center">
+            <a
+              href="https://cpp.nodesandbits.tech"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 text-base-300 transition-colors hover:text-base-100"
+            >
+              <img
+                src={`${import.meta.env.BASE_URL}nodesandbits.svg`}
+                alt="Nodes and Bits"
+                width={28}
+                height={28}
+                className="shrink-0"
+              />
+              <span>
+                Feature brought to you by{' '}
+                <span className="font-medium text-base-200">Nodes and Bits</span>
+              </span>
+            </a>
+            <p className="text-base-600">
+              All rights reserved to Acktarius 2026 ©
+            </p>
+          </div>
         </footer>
       </div>
 
@@ -181,10 +201,7 @@ function App() {
       <TokenModal
         open={tokenOpen}
         onClose={() => setTokenOpen(false)}
-        onSaved={() => {
-          refresh();
-          setBannerDismissed(false);
-        }}
+        onSaved={() => setBannerDismissed(false)}
       />
     </div>
   );

@@ -1,5 +1,6 @@
 import { AlertCircle, Pin, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { parseRepoSlug } from '../lib/repo';
 import { Modal } from './Modal';
 
 interface Props {
@@ -33,17 +34,20 @@ export function AddCoinModal({ open, onClose, onAdd }: Props) {
   }, [open]);
 
   const addRepo = () => {
-    const v = repoInput.trim();
-    if (!v) return;
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(v)) {
-      setError('Use the owner/name format, e.g. bitcoin/bitcoin');
+    const slug = parseRepoSlug(repoInput);
+    if (!slug) {
+      if (repoInput.trim()) {
+        setError(
+          'Use owner/name or a GitHub URL, e.g. bitcoin/bitcoin or https://github.com/bitcoin/bitcoin',
+        );
+      }
       return;
     }
-    if (repos.some((r) => r.toLowerCase() === v.toLowerCase())) {
+    if (repos.some((r) => r.toLowerCase() === slug.toLowerCase())) {
       setError('That repo is already in the list.');
       return;
     }
-    setRepos((prev) => [...prev, v]);
+    setRepos((prev) => [...prev, slug]);
     setRepoInput('');
     setError('');
   };
@@ -57,14 +61,28 @@ export function AddCoinModal({ open, onClose, onAdd }: Props) {
       setError('Coin name is required.');
       return;
     }
-    if (repos.length === 0) {
+    // Accept a typed-but-not-added URL/slug on submit.
+    let list = repos;
+    if (repoInput.trim()) {
+      const slug = parseRepoSlug(repoInput);
+      if (!slug) {
+        setError(
+          'Use owner/name or a GitHub URL, e.g. bitcoin/bitcoin or https://github.com/bitcoin/bitcoin',
+        );
+        return;
+      }
+      if (!list.some((r) => r.toLowerCase() === slug.toLowerCase())) {
+        list = [...list, slug];
+      }
+    }
+    if (list.length === 0) {
       setError('Add at least one repository.');
       return;
     }
     onAdd({
       symbol: symbol.trim(),
       name: name.trim(),
-      repos,
+      repos: list,
       logoUrl: logoUrl.trim() || undefined,
     });
     onClose();
@@ -139,7 +157,7 @@ export function AddCoinModal({ open, onClose, onAdd }: Props) {
                   addRepo();
                 }
               }}
-              placeholder="owner/name"
+              placeholder="owner/name or github.com/…"
               className="flex-1 rounded-xl border border-base-700 bg-base-900 px-3 py-2 text-sm text-base-100 placeholder:text-base-500 focus:border-accent-500/60 focus:outline-none focus:ring-2 focus:ring-accent-500/20"
             />
             <button

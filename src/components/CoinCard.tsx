@@ -9,7 +9,6 @@ import {
   MoreVertical,
   Pencil,
   Pin,
-  RefreshCw,
   RotateCcw,
   Trash2,
 } from 'lucide-react';
@@ -24,7 +23,6 @@ interface Props {
   onEdit: (coin: CoinConfig) => void;
   onRemove: (id: string) => void;
   onResetRepos: (id: string) => void;
-  onRefresh: (id: string) => void;
 }
 
 const stateMeta: Record<
@@ -69,7 +67,6 @@ export function CoinCard({
   onEdit,
   onRemove,
   onResetRepos,
-  onRefresh,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -117,14 +114,6 @@ export function CoinCard({
                   onClick={() => {
                     setMenuOpen(false);
                     onEdit(coin);
-                  }}
-                />
-                <MenuItem
-                  icon={<RefreshCw size={14} />}
-                  label="Refresh"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onRefresh(coin.id);
                   }}
                 />
                 {coin.custom && (
@@ -319,6 +308,14 @@ function RepoRow({
         {state === 'empty' ? (
           <span className="inline-flex items-center gap-1 text-base-500">
             <Inbox size={11} /> 0
+          </span>
+        ) : state === 'error' || state === 'not-found' ? (
+          <span className="text-error-400" title={rs?.error}>
+            —
+          </span>
+        ) : state === 'rate-limited' ? (
+          <span className="text-warning-400" title={rs?.error}>
+            —
           </span>
         ) : (
           <>

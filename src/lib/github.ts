@@ -3,8 +3,8 @@ import type { RateLimitInfo, RepoState, RepoStats } from '../types';
 const API_ROOT = 'https://api.github.com';
 
 /**
- * A GitHub personal access token read from localStorage (user-supplied, optional).
- * Stored under the key set in storageKeys.token so it survives reloads.
+ * Optional GitHub token from localStorage. Not required for a one-shot load
+ * of a handful of repos (regular REST limit: 60/hr unauthenticated).
  */
 function getToken(): string | null {
   try {
@@ -42,6 +42,7 @@ interface FetchResult<T> {
   status: number;
   rateLimit: RateLimitInfo | null;
   error?: string;
+  link?: string | null;
 }
 
 async function ghFetch<T>(
@@ -54,14 +55,16 @@ async function ghFetch<T>(
       headers: { ...authHeaders(), ...(init?.headers || {}) },
     });
     const rateLimit = parseRateLimit(res.headers);
+    const link = res.headers.get('link');
+
     if (res.status === 403 || res.status === 429) {
       const body = await res.json().catch(() => ({}));
       const msg =
         body?.message ||
         (rateLimit?.exhausted
           ? 'GitHub API rate limit exceeded.'
-          : 'GitHub API rate limit reached. Try again later or add a token.');
-      return { data: null, status: res.status, rateLimit, error: msg };
+          : 'GitHub API rate limit reached. Try again later.');
+      return { data: null, status: res.status, rateLimit, error: msg, link };
     }
     if (res.status === 404) {
       return {
@@ -69,6 +72,16 @@ async function ghFetch<T>(
         status: 404,
         rateLimit,
         error: 'Repository not found.',
+        link,
+      };
+    }
+    if (res.status === 409) {
+      return {
+        data: null,
+        status: 409,
+        rateLimit,
+        error: 'Repository is empty or unavailable.',
+        link,
       };
     }
     if (!res.ok) {
@@ -78,10 +91,11 @@ async function ghFetch<T>(
         status: res.status,
         rateLimit,
         error: body?.message || `Request failed (${res.status})`,
+        link,
       };
     }
     const data = (await res.json()) as T;
-    return { data, status: res.status, rateLimit };
+    return { data, status: res.status, rateLimit, link };
   } catch (e) {
     return {
       data: null,
@@ -131,14 +145,41 @@ export async function checkRepo(
   if (r.status === 404)
     return { ok: false, error: 'Repository not found or not accessible.' };
   if (r.status === 403 || r.status === 429)
-    return { ok: false, error: 'Rate limited — try again or add a token.' };
+    return { ok: false, error: 'Rate limited — try again later.' };
   return { ok: r.data !== null };
 }
 
 /**
- * Fetch commit counts for a repo in the last 30 and 180 days using the
- * search API. The search API caps total_count at 1000, which is fine for
- * our windows but is noted in the UI via the "capped" flag when hit.
+ * Count commits since `sinceISO` with a single request:
+ * `per_page=1` + parse `rel="last"` from the Link header.
+ * Includes merge commits (GitHub Insights "excluding merges" will be a bit lower).
+ */
+async function countCommitsSince(
+  repo: string,
+  sinceISO: string,
+): Promise<FetchResult<number>> {
+  const path = `/repos/${repo}/commits?since=${encodeURIComponent(sinceISO)}&per_page=1`;
+  const r = await ghFetch<unknown[]>(path);
+  if (r.data === null && r.status !== 200) {
+    return { ...r, data: null };
+  }
+
+  const last = r.link?.match(/[?&]page=(\d+)>;\s*rel="last"/i);
+  if (last) {
+    return { ...r, data: Number(last[1]) };
+  }
+
+  // No pagination → 0 or 1 commit on this page.
+  const n = Array.isArray(r.data) ? r.data.length : 0;
+  return { ...r, data: n };
+}
+
+function daysAgoISO(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * Commit counts for 30d / 180d via the commits list API (accurate, 2 REST calls).
  */
 export async function fetchRepoStats(repo: string): Promise<RepoStats> {
   const base: RepoStats = {
@@ -148,23 +189,11 @@ export async function fetchRepoStats(repo: string): Promise<RepoStats> {
     state: 'loading',
   };
 
-  const now = Date.now();
-  const d30 = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const d180 = new Date(now - 180 * 24 * 60 * 60 * 1000).toISOString();
-
-  // Run both queries in parallel.
   const [r30, r180] = await Promise.all([
-    ghFetch<{ total_count: number; incomplete_results: boolean }>(
-      `/search/commits?q=repo:${repo}+author-date:>=${d30}&per_page=1`,
-      { headers: { Accept: 'application/vnd.github.cloak-preview+json' } },
-    ),
-    ghFetch<{ total_count: number; incomplete_results: boolean }>(
-      `/search/commits?q=repo:${repo}+author-date:>=${d180}&per_page=1`,
-      { headers: { Accept: 'application/vnd.github.cloak-preview+json' } },
-    ),
+    countCommitsSince(repo, daysAgoISO(30)),
+    countCommitsSince(repo, daysAgoISO(180)),
   ]);
 
-  // Rate limited on either -> whole repo is rate-limited.
   if (
     r30.status === 403 ||
     r30.status === 429 ||
@@ -173,18 +202,26 @@ export async function fetchRepoStats(repo: string): Promise<RepoStats> {
   ) {
     return { ...base, state: 'rate-limited', error: r30.error || r180.error };
   }
-  // 404 on the repo itself.
   if (r30.status === 404 && r180.status === 404) {
     return { ...base, state: 'not-found', error: 'Repository not found.' };
   }
-
-  const err = r30.error || r180.error;
-  if (err && !r30.data && !r180.data) {
-    return { ...base, state: 'error', error: err };
+  if (r30.status === 409 || r180.status === 409) {
+    return {
+      ...base,
+      state: 'empty',
+      error: r30.error || r180.error,
+    };
+  }
+  if (r30.data === null && r180.data === null) {
+    return {
+      ...base,
+      state: 'error',
+      error: r30.error || r180.error || 'Failed to load commits.',
+    };
   }
 
-  const c30 = r30.data?.total_count ?? 0;
-  const c180 = r180.data?.total_count ?? 0;
+  const c30 = r30.data ?? 0;
+  const c180 = r180.data ?? 0;
 
   return {
     ...base,
