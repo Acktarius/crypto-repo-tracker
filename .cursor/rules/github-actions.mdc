@@ -1,0 +1,44 @@
+---
+description: Keep GitHub Actions workflows on current Node 24-compatible action majors
+globs: .github/workflows/**/*.{yml,yaml}
+alwaysApply: false
+---
+
+# GitHub Actions (this repo)
+
+When editing workflows under `.github/workflows/`:
+
+## Node / runner runtime
+
+- Prefer **Node 24** for `actions/setup-node` (`node-version: 24`).
+- Do **not** pin actions that still declare the Node 20 action runtime — GitHub forces Node 24 and emits deprecation noise.
+- Docs mentioned via `@GitHub Actions` are reference only; always verify current majors against each action’s latest release before changing pins.
+
+## Preferred pins (update when bumps land)
+
+| Action | Prefer |
+|--------|--------|
+| `actions/checkout` | `@v7` |
+| `actions/setup-node` | `@v7` |
+| `actions/upload-pages-artifact` | `@v5` |
+| `actions/deploy-pages` | `@v5` |
+
+If a step fails after a major bump, check that action’s README for breaking changes; do not silently downgrade to Node 20 eras (`checkout@v4`, `setup-node@v4`, `deploy-pages@v4`).
+
+## This project’s Pages deploy
+
+- Trigger on `main` (+ `workflow_dispatch`).
+- Build with `npm ci` + `npm run build`; artifact path `dist`.
+- Vite `base` is `/crypto-repo-tracker/` in production builds — do not change the Pages source away from GitHub Actions without updating `vite.config.ts`.
+
+## CI (`ci.yml`)
+
+- Trigger on **every push** (any branch) + `workflow_dispatch`.
+- Blocking: `typecheck`, `lint`, `format`, `check`.
+- Non-blocking: `npm audit --omit=dev` with `continue-on-error: true`.
+- Same Node 24 / action majors as above.
+
+## Rule vs skill
+
+- Keep workflow conventions in this **project rule** (file-scoped).
+- A **skill** is only needed for a reusable multi-repo procedure; don’t duplicate this as a skill unless asked to share it across projects.

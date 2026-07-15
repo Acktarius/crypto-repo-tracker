@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchRateLimit, fetchRepoStats } from '../lib/github';
 import type { CoinConfig, CoinStats, RateLimitInfo } from '../types';
 
@@ -66,28 +66,19 @@ export function useGitHubStats(coins: CoinConfig[]): UseGitHubStatsResult {
   const [loading, setLoading] = useState(false);
   const [lastGlobalUpdate, setLastGlobalUpdate] = useState<number | null>(null);
 
-  // Stable key so we only re-fetch when ids/repos actually change.
-  const coinKey = useMemo(
-    () => coins.map((c) => `${c.id}:${c.repos.join(',')}`).join('|'),
-    [coins],
-  );
-  const coinsRef = useRef(coins);
-  coinsRef.current = coins;
-
   useEffect(() => {
     let cancelled = false;
-    const snapshot = coinsRef.current;
 
     async function load() {
       setLoading(true);
-      setStats(Object.fromEntries(snapshot.map((c) => [c.id, loadingStats(c)])));
+      setStats(Object.fromEntries(coins.map((c) => [c.id, loadingStats(c)])));
 
       const rl = await fetchRateLimit().catch(() => null);
       if (cancelled) return;
       if (rl) setRateLimit(rl);
 
       // Sequential: stay well inside the 60/hr unauthenticated REST budget.
-      for (const coin of snapshot) {
+      for (const coin of coins) {
         if (cancelled) return;
         const repoResults: CoinStats['repos'] = [];
         for (const repo of coin.repos) {
@@ -118,7 +109,7 @@ export function useGitHubStats(coins: CoinConfig[]): UseGitHubStatsResult {
     return () => {
       cancelled = true;
     };
-  }, [coinKey]);
+  }, [coins]);
 
   return {
     stats,

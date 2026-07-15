@@ -20,11 +20,7 @@ function App() {
     resetRepos,
     resetAllToDefaults,
   } = useCoins();
-  const {
-    stats,
-    rateLimit,
-    lastGlobalUpdate,
-  } = useGitHubStats(orderedCoins);
+  const { stats, rateLimit, lastGlobalUpdate } = useGitHubStats(orderedCoins);
 
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('30d');
@@ -175,7 +171,9 @@ function App() {
               />
               <span>
                 Feature brought to you by{' '}
-                <span className="font-medium text-base-200">Nodes and Bits</span>
+                <span className="font-medium text-base-200">
+                  Nodes and Bits
+                </span>
               </span>
             </a>
             <p className="text-base-600">
