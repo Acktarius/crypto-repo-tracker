@@ -157,7 +157,7 @@ function App() {
           </div>
           <div className="flex flex-col items-center gap-2 text-center">
             <a
-              href="https://cpp.nodesandbits.tech"
+              href="https://nodesandbits.com/"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 text-base-300 transition-colors hover:text-base-100"
