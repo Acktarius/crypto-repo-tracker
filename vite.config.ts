@@ -2,9 +2,9 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-// Local `npm run dev` → base `/`
-// `npm run build` / GitHub Pages → /crypto-repo-tracker/
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/crypto-repo-tracker/' : '/',
+// Custom domain (devtrack.nodesandbits.tech) serves from site root → base `/`.
+// Also correct for local `npm run dev`.
+export default defineConfig({
+  base: '/',
   plugins: [react(), tailwindcss()],
-}));
+});

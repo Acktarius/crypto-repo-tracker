@@ -29,7 +29,7 @@ If a step fails after a major bump, check that action’s README for breaking ch
 
 - Trigger on `main` (+ `workflow_dispatch`).
 - Build with `npm ci` + `npm run build`; artifact path `dist`.
-- Vite `base` is `/crypto-repo-tracker/` in production builds — do not change the Pages source away from GitHub Actions without updating `vite.config.ts`.
+- Vite `base` is `/` (custom domain `devtrack.nodesandbits.tech` at site root). Do not reintroduce `/crypto-repo-tracker/` unless dropping the custom domain.
 
 ## CI (`ci.yml`)
 
